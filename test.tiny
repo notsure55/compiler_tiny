@@ -1,0 +1,4 @@
+BEGIN
+    y = 6;
+    x = 5 + y;
+END
