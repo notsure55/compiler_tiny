@@ -44,16 +44,24 @@ impl<'a> Lexer<'a> {
     pub fn new(input: &'a str, grammars: Vec<&'static dyn Grammar>) -> Self {
         let mut input = input;
         let mut tokens = VecDeque::new();
+
         while let Some(token) = tokenize(&mut input, 1, grammars.clone()) {
-            if token.id() != TokenId::WhiteSpace {
+            if let Some(token) = token.reserved() {
                 tokens.push_back(token);
+            } else {
+                if token.id() != TokenId::WhiteSpace {
+                    tokens.push_back(token);
+                }
             }
         }
 
         Self { tokens }
     }
     pub fn peek(&self) -> Option<&Token<'a>> {
-        self.tokens.front()
+        self.tokens.get(0)
+    }
+    pub fn peek_next(&self) -> Option<&Token<'a>> {
+        self.tokens.get(1)
     }
 }
 

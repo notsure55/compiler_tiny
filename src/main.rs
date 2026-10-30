@@ -14,7 +14,7 @@ mod grammar;
 mod lexer;
 mod token;
 
-use ast::production::{AssignBuilder, AstBuilder, ExprBuilder};
+use ast::production::{AssignBuilder, AstBuilder, ExprBuilder, ProcedureBuilder};
 
 use grammar::*;
 use lexer::Lexer;
@@ -33,8 +33,6 @@ Program -> Procedure+
 // [ident y] [equal] [6 intlit] ->
 // [ident x] [equal] [5 intlit] [plus] [ident y]
 
-fn create_ast() {}
-
 fn main() -> Result<()> {
     let mut buffer = String::new();
     File::open(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test.tiny"))?
@@ -51,10 +49,10 @@ fn main() -> Result<()> {
         ],
     );
 
-    let expr = AssignBuilder {};
-    let ast_objs = expr.build(&mut lexer)?;
+    let procedure = ProcedureBuilder {};
+    let procedure = procedure.build(&mut lexer).unwrap();
 
-    println!("{ast_objs:#?}");
+    println!("{procedure:#?}");
 
     Ok(())
 }

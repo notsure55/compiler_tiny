@@ -4,6 +4,8 @@ use std::iter::Peekable;
 
 pub mod production;
 
+use production::AstObj;
+
 #[derive(Debug)]
 pub enum AstNode {
     Var(Var),
@@ -18,7 +20,7 @@ impl AstNode {
             Token::IntLit(i) => AstNode::Constant(Constant::new(i)),
             Token::Ident(i) => AstNode::Var(Var::new(i)),
             Token::Operator(o) => AstNode::Operator(Operator::new(o)),
-            _ => todo!("Handle this case!"),
+            _ => AstNode::Unknown,
         };
 
         Some(node)
@@ -88,13 +90,37 @@ pub struct Info {
 
 #[derive(Debug)]
 pub struct Expr {
-    left: Box<AstNode>,
+    left: AstNode,
     op: Option<Operator>,
-    right: Option<Box<AstNode>>,
+    right: Option<Box<Self>>,
 }
 
 impl Expr {
-    pub fn new(tokens: &[Token]) -> Option<Self> {
+    pub fn new(objs: Vec<AstObj>) -> Option<Self> {
+        let mut objs = objs.into_iter();
+
+        if let Some(AstObj::AstNode(node)) = objs.next() {
+            if let Some(AstObj::AstNode(AstNode::Operator(op))) = objs.next() {
+                if op.op != Op::Equal {
+                    if let Some(AstObj::Ast(Ast::Expr(expr))) = objs.next() {
+                        return Some(Self {
+                            left: node,
+                            op: Some(op),
+                            right: Some(Box::new(expr)),
+                        });
+                    }
+                } else {
+                    todo!("Unhandled grammar error this shouldnt be possible though")
+                }
+            } else {
+                return Some(Self {
+                    left: node,
+                    op: None,
+                    right: None,
+                });
+            }
+        }
+
         None
     }
     pub fn from_nodes(mut nodes: impl Iterator<Item = AstNode>) -> Option<Self> {
@@ -104,6 +130,8 @@ impl Expr {
 
 #[derive(Debug)]
 pub enum Ast {
+    Procedure(Procedure),
+    SS(StatementSeq),
     Assign(Assign),
     Expr(Expr),
 }
@@ -126,7 +154,7 @@ impl Ast {
 
 #[derive(Debug)]
 pub struct Assign {
-    left: AstNode,
+    left: Var,
     right: Expr,
 }
 
@@ -135,66 +163,60 @@ impl Assign {
         //match tokens.peek() {}
         None
     }
+    pub fn new(objs: Vec<AstObj>) -> Option<Self> {
+        let mut objs = objs.into_iter();
+        if let Some(AstObj::AstNode(AstNode::Var(var))) = objs.next() {
+            if let Some(AstObj::AstNode(AstNode::Operator(op))) = objs.next() {
+                if op.op == Op::Equal {
+                    if let Some(AstObj::Ast(Ast::Expr(expr))) = objs.next() {
+                        return Some(Self {
+                            left: var,
+                            right: expr,
+                        });
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug)]
 pub struct StatementSeq {
-    stmt: Ast,
+    stmt: Box<Ast>,
     next: Option<Box<Self>>,
 }
 
 impl StatementSeq {
-    pub fn new(stmt: Ast, next: Option<Box<Self>>) -> Self {
-        Self { stmt, next }
-    }
-    pub fn from_tokens<'a, I: Iterator<Item = Token<'a>>>(
-        tokens: &mut Peekable<I>,
-    ) -> Option<Self> {
-        let ast = match Ast::parse_ast(tokens) {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("{e}");
-                return None;
+    pub fn new(asts: Vec<AstObj>) -> Self {
+        let mut asts = asts.into_iter();
+        let ast = asts.next();
+
+        if let Some(AstObj::Ast(ast)) = ast {
+            let next = if let Some(AstObj::Ast(Ast::SS(ss))) = asts.next() {
+                Some(Box::new(ss))
+            } else {
+                None
+            };
+
+            Self {
+                stmt: Box::new(ast),
+                next,
             }
-        };
-
-        let next = StatementSeq::from_tokens(tokens).and_then(|s| Some(Box::new(s)));
-
-        Some(StatementSeq { stmt: ast, next })
+        } else {
+            todo!("Not handled in ss yet");
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct Program {
+pub struct Procedure {
     stmt: StatementSeq,
 }
 
-impl Program {
-    pub fn new(mut tokens: Vec<Token>) -> Option<Self> {
-        if let Some(Token::Reserved(t)) = tokens.pop() {
-            if t != Reserved::End {
-                return None;
-            }
-        } else {
-            return None;
-        }
-
-        let mut tokens = tokens.into_iter().peekable();
-
-        if let Some(Token::Reserved(t)) = tokens.next() {
-            if t != Reserved::Begin {
-                return None;
-            }
-        } else {
-            return None;
-        }
-
-        Some(Self {
-            stmt: StatementSeq::from_tokens(&mut tokens)?,
-        })
+impl Procedure {
+    pub fn new(stmt: StatementSeq) -> Self {
+        Self { stmt }
     }
-}
-
-pub fn parse_ast(tokens: Vec<Token>) -> Program {
-    Program::new(tokens).unwrap()
 }
