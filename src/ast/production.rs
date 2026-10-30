@@ -1,4 +1,6 @@
 use super::{Assign, Ast, AstNode, Expr, Token, TokenId};
+use crate::lexer::Lexer;
+use std::fmt::Debug;
 use std::iter::Peekable;
 
 use anyhow::{anyhow, Result};
@@ -15,9 +17,6 @@ Expr-> (Term-Expr NonTerm-Plus Term-Expr)|(Term-Expr NonTerm-Minus TermExpr)|Non
 }*/
 
 #[derive(Debug)]
-pub struct ExprBuilder {}
-
-#[derive(Debug)]
 pub enum AstObj {
     Ast(Ast),
     AstNode(AstNode),
@@ -32,12 +31,55 @@ impl AstObj {
     }
 }
 
-// Will be called if you know it is this the first token is part of this ast
-impl ExprBuilder {
-    pub fn build<'a, I: Iterator<Item = Token<'a>>>(
-        &self,
-        tokens: &mut Peekable<I>,
-    ) -> Result<Vec<AstObj>> {
+use std::sync::LazyLock;
+
+// Expr-> (Term-Expr NonTerm-Plus Term-Expr)|(Term-Expr NonTerm-Minus TermExpr)|NonTerm-Constant|NonTerm-Ident
+static EXPR_RULES: LazyLock<ProductionRule> = LazyLock::new(|| {
+    ProductionRule::new(vec![
+        vec![
+            Terminal::Term(Box::new(ExprBuilder {})),
+            Terminal::Non(TokenId::Plus),
+            Terminal::Term(Box::new(ExprBuilder {})),
+        ],
+        vec![
+            Terminal::Term(Box::new(ExprBuilder {})),
+            Terminal::Non(TokenId::Plus),
+            Terminal::Term(Box::new(ExprBuilder {})),
+        ],
+        vec![Terminal::Non(TokenId::IntLit)],
+        vec![Terminal::Non(TokenId::Ident)],
+    ])
+});
+
+// Assign -> NonTerminal-Ident NonTerminal-Equal Term-Expr;
+static ASSIGN_RULES: LazyLock<ProductionRule> = LazyLock::new(|| {
+    ProductionRule::new(vec![vec![
+        Terminal::Non(TokenId::Ident),
+        Terminal::Non(TokenId::Equal),
+        Terminal::Term(Box::new(ExprBuilder {})),
+    ]])
+});
+
+#[derive(Debug)]
+pub struct ExprBuilder {}
+
+impl AstBuilder for ExprBuilder {
+    fn prod(&self) -> &ProductionRule {
+        &*EXPR_RULES
+    }
+}
+
+#[derive(Debug)]
+pub struct AssignBuilder {}
+
+impl AstBuilder for AssignBuilder {
+    fn prod(&self) -> &ProductionRule {
+        &*ASSIGN_RULES
+    }
+}
+
+pub trait AstBuilder: Send + Sync + Debug {
+    fn build<'a>(&self, tokens: &mut Lexer<'a>) -> Result<Vec<AstObj>> {
         let mut ast_rules = vec![];
 
         let token = tokens.next().unwrap();
@@ -51,7 +93,7 @@ impl ExprBuilder {
 
         for term in rule.iter() {
             let ast_rule = match term {
-                Terminal::Term(builder) => ast_rules.append(&mut builder.build(tokens)?),
+                Terminal::Term(builder) => ast_rules.extend(builder.build(tokens)?),
                 Terminal::Non(token_id) => {
                     if let Some(peeked) = tokens.peek() {
                         if peeked.id() == *token_id {
@@ -73,28 +115,18 @@ impl ExprBuilder {
 
         Ok(ast_rules)
     }
-    pub fn prod(&self) -> ProductionRule {
-        ProductionRule::new(vec![
-            vec![
-                Terminal::Term(ExprBuilder {}),
-                Terminal::Non(TokenId::Plus),
-                Terminal::Term(ExprBuilder {}),
-            ],
-            vec![
-                Terminal::Term(ExprBuilder {}),
-                Terminal::Non(TokenId::Plus),
-                Terminal::Term(ExprBuilder {}),
-            ],
-            vec![Terminal::Non(TokenId::IntLit)],
-            vec![Terminal::Non(TokenId::Ident)],
-        ])
-    }
-    pub fn is_first_variant<'a>(&self, token: &Token<'a>) -> bool {
+    fn prod(&self) -> &ProductionRule;
+    fn is_first_variant<'a>(&self, token: &Token<'a>) -> bool {
         for sub_rule in self.prod().rules.iter() {
             if let Some(term) = sub_rule.first() {
                 match term {
-                    // TODO implement somethign to check if self so if self we skip
-                    Terminal::Term(builder) => continue, //return builder.is_first_variant(token),
+                    Terminal::Term(builder) => {
+                        if self.is_self(builder) {
+                            continue;
+                        } else {
+                            return builder.is_first_variant(token);
+                        }
+                    }
                     Terminal::Non(token_id) => {
                         if token.id() == *token_id {
                             return true;
@@ -108,35 +140,36 @@ impl ExprBuilder {
 
         false
     }
+    fn is_self(&self, other: &Box<dyn AstBuilder>) -> bool {
+        if self.prod() == other.prod() {
+            true
+        } else {
+            false
+        }
+    }
 }
-
-/*pub trait AstBuilder {
-    fn build<'a, I: Iterator<Item = Token<'a>>>(&self, tokens: &mut Peekable<I>)
-        -> Result<AstObj>;
-    fn production_rules(&self) -> &ProductionRule;
-}*/
 
 #[derive(Debug)]
 pub enum Terminal {
-    Term(ExprBuilder),
+    Term(Box<dyn AstBuilder>),
     Non(TokenId),
 }
+
+unsafe impl Sync for Terminal {}
 
 #[derive(Debug)]
 pub struct ProductionRule {
     rules: Vec<Vec<Terminal>>,
 }
 
+unsafe impl Sync for ProductionRule {}
+
 impl ProductionRule {
     pub fn new(rules: Vec<Vec<Terminal>>) -> Self {
         Self { rules }
     }
 
-    pub fn find_match<'a, I: Iterator<Item = Token<'a>>>(
-        &self,
-        token: &Token<'a>,
-        tokens: &mut Peekable<I>,
-    ) -> Option<&[Terminal]> {
+    pub fn find_match<'a>(&self, token: &Token<'a>, tokens: &mut Lexer<'a>) -> Option<&[Terminal]> {
         for sub_rule in self.rules.iter() {
             let first = sub_rule.first().unwrap();
             match first {
@@ -146,7 +179,7 @@ impl ProductionRule {
                             if let Some(peeked) = tokens.peek() {
                                 match term {
                                     Terminal::Term(ast) => {
-                                        if ast.is_first_variant(peeked) {
+                                        if ast.is_first_variant(&peeked) {
                                             return Some(&sub_rule[1..]);
                                         } else {
                                             continue;
@@ -177,5 +210,11 @@ impl ProductionRule {
         }
 
         None
+    }
+}
+
+impl PartialEq for ProductionRule {
+    fn eq(&self, other: &ProductionRule) -> bool {
+        true
     }
 }

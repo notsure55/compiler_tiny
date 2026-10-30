@@ -1,5 +1,7 @@
 use super::grammar::*;
-use super::token::Token;
+use super::token::{Token, TokenId};
+
+use std::collections::VecDeque;
 
 fn tokenize<'a>(
     input: &mut &'a str,
@@ -32,8 +34,7 @@ fn tokenize<'a>(
 }
 
 pub struct Lexer<'a> {
-    input: &'a str,
-    grammars: Vec<&'static dyn Grammar>,
+    tokens: VecDeque<Token<'a>>,
 }
 
 // TODO: Add a way to log line and columns for each token
@@ -41,7 +42,18 @@ pub struct Lexer<'a> {
 // that keeps track of index in a certain line and stores that with the token
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str, grammars: Vec<&'static dyn Grammar>) -> Self {
-        Self { input, grammars }
+        let mut input = input;
+        let mut tokens = VecDeque::new();
+        while let Some(token) = tokenize(&mut input, 1, grammars.clone()) {
+            if token.id() != TokenId::WhiteSpace {
+                tokens.push_back(token);
+            }
+        }
+
+        Self { tokens }
+    }
+    pub fn peek(&self) -> Option<&Token<'a>> {
+        self.tokens.front()
     }
 }
 
@@ -49,12 +61,6 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let token = tokenize(&mut self.input, 1, self.grammars.clone())?;
-
-        if let Some(reserved) = token.reserved() {
-            return Some(reserved);
-        }
-
-        Some(token)
+        self.tokens.pop_front()
     }
 }

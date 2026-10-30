@@ -14,7 +14,7 @@ mod grammar;
 mod lexer;
 mod token;
 
-use ast::production::ExprBuilder;
+use ast::production::{AssignBuilder, AstBuilder, ExprBuilder};
 
 use grammar::*;
 use lexer::Lexer;
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     File::open(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test.tiny"))?
         .read_to_string(&mut buffer)?;
 
-    let tokens: Vec<_> = Lexer::new(
+    let mut lexer = Lexer::new(
         &buffer,
         vec![
             &*IDENT_GRAMMAR,
@@ -49,20 +49,10 @@ fn main() -> Result<()> {
             &*INT_LIT_GRAMMAR,
             &*SEMI_COLON_GRAMMAR,
         ],
-    )
-    .filter_map(|t| {
-        if let Token::WhiteSpace(t) = t {
-            None
-        } else {
-            Some(t)
-        }
-    })
-    .collect();
+    );
 
-    println!("{tokens:?}");
-
-    let expr = ExprBuilder {};
-    let ast_objs = expr.build(&mut tokens.into_iter().peekable())?;
+    let expr = AssignBuilder {};
+    let ast_objs = expr.build(&mut lexer)?;
 
     println!("{ast_objs:#?}");
 
