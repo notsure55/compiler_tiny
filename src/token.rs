@@ -21,7 +21,7 @@ pub enum Op {
     Minus,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Token<'a> {
     Reserved(Reserved),
     Ident(&'a str),
@@ -39,4 +39,36 @@ impl<'a> Token<'a> {
             _ => None,
         }
     }
+    pub fn id(&self) -> TokenId {
+        match self {
+            Self::Reserved(r) => match r {
+                Reserved::Begin => TokenId::Begin,
+                Reserved::End => TokenId::End,
+            },
+            Self::Ident(_) => TokenId::Ident,
+            Self::IntLit(_) => TokenId::IntLit,
+            Self::SemiColon => TokenId::SemiColon,
+            Self::Operator(o) => match o {
+                Op::Equal => TokenId::Equal,
+                Op::Plus => TokenId::Plus,
+                Op::Minus => TokenId::Minus,
+            },
+            Self::Unhandled(_) => TokenId::Unhandled,
+            Self::WhiteSpace(_) => TokenId::WhiteSpace,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum TokenId {
+    Begin,
+    End,
+    Ident,
+    IntLit,
+    SemiColon,
+    Equal,
+    Plus,
+    Minus,
+    Unhandled,
+    WhiteSpace,
 }

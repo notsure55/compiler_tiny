@@ -14,6 +14,8 @@ mod grammar;
 mod lexer;
 mod token;
 
+use ast::production::ExprBuilder;
+
 use grammar::*;
 use lexer::Lexer;
 use token::Token;
@@ -35,7 +37,8 @@ fn create_ast() {}
 
 fn main() -> Result<()> {
     let mut buffer = String::new();
-    File::open("../test.tiny")?.read_to_string(&mut buffer)?;
+    File::open(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test.tiny"))?
+        .read_to_string(&mut buffer)?;
 
     let tokens: Vec<_> = Lexer::new(
         &buffer,
@@ -56,9 +59,12 @@ fn main() -> Result<()> {
     })
     .collect();
 
-    let program = ast::parse_ast(tokens);
+    println!("{tokens:?}");
 
-    println!("{program:#?}");
+    let expr = ExprBuilder {};
+    let ast_objs = expr.build(&mut tokens.into_iter().peekable())?;
+
+    println!("{ast_objs:#?}");
 
     Ok(())
 }
